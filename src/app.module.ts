@@ -7,6 +7,10 @@ import configuration from './config/configuration';
 import { Item, ItemSchema } from './item.schema';
 import { ItemService } from './item.service';
 import { ItemController } from './item.controller';
+import { OAuthToken, OAuthTokenSchema } from './oauth.schema';
+import { OauthService } from './oauth.service';
+import { OauthController } from './oauth.controller';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
   imports: [
@@ -25,8 +29,10 @@ import { ItemController } from './item.controller';
       },
     }),
     MongooseModule.forFeature([{ name: Item.name, schema: ItemSchema }]),
+    HttpModule,
+    MongooseModule.forFeature([{ name: OAuthToken.name, schema: OAuthTokenSchema }]),
   ],
-  controllers: [AppController, ItemController],
-  providers: [AppService, ItemService],
+  controllers: [AppController, ItemController, OauthController],
+  providers: [AppService, ItemService, OauthService],
 })
 export class AppModule {}
