@@ -6,6 +6,7 @@ import { HttpService } from '@nestjs/axios';
 import { OauthService } from './oauth.service';
 import { OAuthToken, OAuthTokenSchema } from './oauth.schema';
 import { of } from 'rxjs';
+import { Configuration, CONFIGURATION_KEY } from './config/configuration';
 
 const mockHttpService = {
   post: jest.fn(),
@@ -30,9 +31,26 @@ describe('OauthService integration (mongodb-memory-server)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        OauthService,
         { provide: getModelToken(OAuthToken.name), useValue: model },
         { provide: HttpService, useValue: mockHttpService },
+        {
+          provide: CONFIGURATION_KEY,
+          useValue: {
+            oauth: {
+              clientId: 'client-id',
+              clientSecret: 'client-secret',
+              redirectUri: 'redirect-uri',
+              tokenUrl: 'token-url',
+              authUrl: 'auth-url',
+              scopes: 'scope1 scope2',
+              testUrl: 'test-url',
+            },
+            flexRoot: 'https://custom.flex',
+            mongoUri: '',
+            mongoDbName: '',
+          } as Configuration,
+        },
+        OauthService,
       ],
     }).compile();
     service = module.get<OauthService>(OauthService);
@@ -152,7 +170,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     // Arrange: Save a token for the org/integration
     const orgSlug = 'org1';
     const integrationId = 'int1';
-    const tokenDoc = await model.create({
+    const tokenDoc: OAuthToken = await model.create({
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
       expiresAt: new Date(Date.now() + 100000),
@@ -169,18 +187,15 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     expect(mockHttpService.get).toHaveBeenCalledWith(
       expect.stringContaining(`/organizations/${orgSlug}/integrations/${integrationId}`),
       expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         headers: expect.objectContaining({
           Authorization: `Bearer ${tokenDoc.accessToken}`,
         }),
       }),
     );
     // Assert: Should store the secret in the DB
-    const updated = await model.findOne({ orgSlug, integrationId }).lean();
-    expect(
-      Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
-        ? (updated as Record<string, unknown>).integrationSecret
-        : undefined,
-    ).toBe('the-secret');
+    const updated = await model.findOne({ orgSlug, integrationId }).exec();
+    expect(updated?.integrationSecret).toBe('the-secret');
   });
 
   it('should not update secret if FLEX API returns no secret', async () => {

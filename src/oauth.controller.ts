@@ -1,21 +1,27 @@
-import { Controller, Get, Post, Query, Res, Req } from '@nestjs/common';
+import { Controller, Get, Inject, Post, Query, Res } from '@nestjs/common';
 import { OauthService } from './oauth.service';
-import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
+import { Configuration, CONFIGURATION_KEY } from './config/configuration';
+
+// DTO for OAuth return query params
+export class OauthReturnQueryDto {
+  code: string;
+  org_slug: string;
+  integrationId: string;
+  locations?: string;
+}
 
 @Controller('oauth')
 export class OauthController {
   constructor(
     private readonly oauthService: OauthService,
-    private readonly configService: ConfigService,
+    @Inject(CONFIGURATION_KEY)
+    private readonly cfg: Configuration,
   ) {}
 
   @Get('start')
   start(@Res() res: Response) {
-    const clientId = this.configService.get<string>('OAUTH_CLIENT_ID') ?? '';
-    const redirectUri = this.configService.get<string>('OAUTH_REDIRECT_URI') ?? '';
-    const authUrl = this.configService.get<string>('OAUTH_AUTH_URL') ?? '';
-    const scopes = this.configService.get<string>('OAUTH_SCOPES') ?? '';
+    const { clientId, redirectUri, authUrl, scopes } = this.cfg.oauth;
     const url = `${authUrl}?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
       redirectUri,
     )}&scope=${encodeURIComponent(scopes)}`;
@@ -23,18 +29,13 @@ export class OauthController {
   }
 
   @Get('return')
-  async oauthReturn(@Req() req, @Res() res: Response) {
-    const { code, org_slug, integrationId, locations } = req.query;
-    const locationsArr = locations ? (locations as string).split(',').filter(Boolean) : undefined;
-    await this.oauthService.exchangeCodeForToken(
-      code as string,
-      org_slug as string,
-      integrationId as string,
-      locationsArr,
-    );
+  async oauthReturn(@Query() query: OauthReturnQueryDto, @Res() res: Response) {
+    const { code, org_slug, integrationId, locations } = query;
+    const locationsArr = locations ? locations.split(',').filter(Boolean) : undefined;
+    await this.oauthService.connectIntegration(code, org_slug, integrationId, locationsArr);
 
     // On successful connection:
-    const flexRoot = this.configService.get<string>('flexRoot') || 'https://staging.officernd.com';
+    const flexRoot = this.cfg.flexRoot;
     return res.redirect(302, `${flexRoot}/connect/external-integration/return`);
   }
 

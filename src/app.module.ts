@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MongooseModule } from '@nestjs/mongoose';
-import configuration from './config/configuration';
 import { ConfigModule } from '@nestjs/config';
 import { Item, ItemSchema } from './item.schema';
 import { ItemService } from './item.service';
@@ -11,13 +10,14 @@ import { OAuthToken, OAuthTokenSchema } from './oauth.schema';
 import { OauthService } from './oauth.service';
 import { OauthController } from './oauth.controller';
 import { HttpModule } from '@nestjs/axios';
+import { configurationLoader } from './config/configuration';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
+    ConfigModule.forRoot({ isGlobal: true, load: [configurationLoader] }),
     MongooseModule.forRootAsync({
       useFactory: () => {
-        const config = configuration();
+        const config = configurationLoader();
         return {
           uri: config.mongoUri,
           dbName: config.mongoDbName,

@@ -1,4 +1,6 @@
-export default () => ({
+import { ConfigType, registerAs } from '@nestjs/config';
+
+export const configurationLoader = registerAs('configuration', () => ({
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017',
   mongoDbName: process.env.MONGO_DB_NAME || 'test',
   oauth: {
@@ -11,4 +13,7 @@ export default () => ({
     testUrl: process.env.OAUTH_TEST_URL || '',
   },
   flexRoot: process.env.FLEX_ROOT || 'https://staging.officernd.com',
-});
+}));
+
+export const CONFIGURATION_KEY = configurationLoader.KEY;
+export type Configuration = ConfigType<typeof configurationLoader>;

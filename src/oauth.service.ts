@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { OAuthToken } from './oauth.schema';
-import configuration from './config/configuration';
 import { AxiosError } from 'axios';
+import { Configuration, CONFIGURATION_KEY } from './config/configuration';
 
 interface TokenResponse {
   access_token: string;
@@ -27,7 +27,22 @@ export class OauthService {
   constructor(
     @InjectModel(OAuthToken.name) private oauthModel: Model<OAuthToken>,
     private readonly httpService: HttpService,
+    @Inject(CONFIGURATION_KEY)
+    private readonly cfg: Configuration, // Inject the configuration
   ) {}
+
+  async connectIntegration(
+    code: string,
+    orgSlug?: string,
+    integrationId?: string,
+    locations?: string[],
+  ): Promise<OAuthToken> {
+    const token = await this.exchangeCodeForToken(code, orgSlug, integrationId, locations);
+    if (orgSlug && integrationId) {
+      await this.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+    }
+    return token;
+  }
 
   async exchangeCodeForToken(
     code: string,
@@ -36,11 +51,7 @@ export class OauthService {
     locations?: string[],
   ): Promise<OAuthToken> {
     try {
-      const config = configuration().oauth;
-      const clientId = config.clientId;
-      const clientSecret = config.clientSecret;
-      const redirectUri = config.redirectUri;
-      const tokenUrl = config.tokenUrl;
+      const { clientId, clientSecret, tokenUrl, redirectUri } = this.cfg.oauth;
 
       const params = new URLSearchParams();
       params.append('grant_type', 'authorization_code');
@@ -49,7 +60,6 @@ export class OauthService {
       params.append('client_id', clientId);
       params.append('client_secret', clientSecret);
       const data = params.toString();
-      console.log('Executing: ', tokenUrl, data);
       const response = await this.httpService
         .post<TokenResponse>(tokenUrl, data, {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -67,14 +77,10 @@ export class OauthService {
         locations,
       });
       await token.save();
-      // After saving the token, fetch and store the integration secret
-      if (orgSlug && integrationId) {
-        await this.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
-      }
+
       return token;
     } catch (error) {
       if (error instanceof AxiosError) {
-        // console.error('Error exchanging code for token:', error.response);
         console.error('Error exchanging code for token:', error.response?.data);
       }
       throw new Error('Failed to exchange code for token');
@@ -82,15 +88,14 @@ export class OauthService {
   }
 
   async fetchAndStoreIntegrationSecret(orgSlug: string, integrationId: string): Promise<void> {
-    const config = configuration();
-    const flexRoot = config.flexRoot;
+    const flexRoot = this.cfg.flexRoot; // Use the injected configuration
     // Get the latest valid token for this orgSlug
     const token = await this.oauthModel
       .findOne({ orgSlug, integrationId })
       .sort({ expiresAt: -1 })
       .exec();
     if (!token) return;
-    const accessToken = token.accessToken;
+    const { accessToken } = token;
     try {
       const integrationResp = await this.httpService
         .get<IntegrationResponse>(
@@ -103,6 +108,7 @@ export class OauthService {
           },
         )
         .toPromise();
+
       const secret = integrationResp?.data?.settings?.secret;
       // Store secret in the DB (extend schema/service as needed)
       if (secret) {
@@ -111,16 +117,14 @@ export class OauthService {
           { $set: { integrationSecret: secret } },
         );
       }
-    } catch {
-      // Handle error (log, fail, etc.)
+    } catch (error) {
+      console.error('Failed to fetch integration secret', error);
+      throw error; // Re-throw to handle it in the calling function
     }
   }
 
   async refreshToken(refreshToken: string): Promise<OAuthToken> {
-    const config = configuration().oauth;
-    const clientId = config.clientId;
-    const clientSecret = config.clientSecret;
-    const tokenUrl = config.tokenUrl;
+    const { clientId, clientSecret, tokenUrl } = this.cfg.oauth;
 
     interface TokenResponse {
       access_token: string;
@@ -162,7 +166,7 @@ export class OauthService {
   async checkConnection(): Promise<boolean> {
     const token = await this.getValidToken();
     if (!token) return false;
-    const testUrl = configuration().oauth.testUrl;
+    const testUrl = `${this.cfg.flexRoot}/api/v2/organizations/${token.orgSlug}/integrations/${token.integrationId}`;
     try {
       await this.httpService.axiosRef.get(testUrl, {
         headers: { Authorization: `Bearer ${token.accessToken}` },
