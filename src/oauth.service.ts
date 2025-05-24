@@ -44,6 +44,27 @@ export class OauthService {
     return token;
   }
 
+  async getIntegrationResponse(integration: OAuthToken): Promise<IntegrationResponse> {
+    const { flexRoot } = this.cfg; // Use the injected configuration
+    const { orgSlug, integrationId, accessToken } = integration; // Destructure to get orgSlug and integrationId
+    const url = `${flexRoot}/api/v2/organizations/${orgSlug}/integrations/${integrationId}`;
+    try {
+      const response = await this.httpService
+        .get<IntegrationResponse>(url, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+        .toPromise();
+
+      if (!response || !response.data) {
+        throw new Error('No response data from integration endpoint');
+      }
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch integration response:', error);
+      throw error; // Re-throw to handle it in the calling function
+    }
+  }
+
   async exchangeCodeForToken(
     code: string,
     orgSlug?: string,
@@ -88,28 +109,16 @@ export class OauthService {
   }
 
   async fetchAndStoreIntegrationSecret(orgSlug: string, integrationId: string): Promise<void> {
-    const flexRoot = this.cfg.flexRoot; // Use the injected configuration
     // Get the latest valid token for this orgSlug
     const token = await this.oauthModel
       .findOne({ orgSlug, integrationId })
       .sort({ expiresAt: -1 })
       .exec();
     if (!token) return;
-    const { accessToken } = token;
     try {
-      const integrationResp = await this.httpService
-        .get<IntegrationResponse>(
-          `${flexRoot}/api/v2/organizations/${orgSlug}/integrations/${integrationId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          },
-        )
-        .toPromise();
+      const integrationResp = await this.getIntegrationResponse(token);
 
-      const secret = integrationResp?.data?.settings?.secret;
+      const secret = integrationResp?.settings?.secret;
       // Store secret in the DB (extend schema/service as needed)
       if (secret) {
         await this.oauthModel.updateOne(
@@ -177,14 +186,12 @@ export class OauthService {
     } else {
       token = await this.getValidToken();
     }
+    // If no token found, return not connected
     if (!token) return { connected: false, message: 'No valid token found' };
-    const testUrl = `${this.cfg.flexRoot}/api/v2/organizations/${token.orgSlug}/integrations/${token.integrationId}`;
+
     try {
-      await this.httpService
-        .get(testUrl, {
-          headers: { Authorization: `Bearer ${token.accessToken}` },
-        })
-        .toPromise();
+      const response = await this.getIntegrationResponse(token);
+      console.log('Integration response:', response);
       return { connected: true };
     } catch (err) {
       return { connected: false, message: (err as Error)?.message || 'Unknown error' };
