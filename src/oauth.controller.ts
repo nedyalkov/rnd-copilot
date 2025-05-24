@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query, Res } from '@nestjs/common';
+import { Controller, Get, Post, Query, Res, Req } from '@nestjs/common';
 import { OauthService } from './oauth.service';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
@@ -23,14 +23,19 @@ export class OauthController {
   }
 
   @Get('return')
-  async oauthReturn(
-    @Query('code') code: string,
-    @Query('org_slug') orgSlug?: string,
-    @Query('integrationId') integrationId?: string,
-    @Query('locations') locations?: string,
-  ) {
-    const locationsArr = locations ? locations.split(',').filter(Boolean) : undefined;
-    return this.oauthService.exchangeCodeForToken(code, orgSlug, integrationId, locationsArr);
+  async oauthReturn(@Req() req, @Res() res: Response) {
+    const { code, org_slug, integrationId, locations } = req.query;
+    const locationsArr = locations ? (locations as string).split(',').filter(Boolean) : undefined;
+    await this.oauthService.exchangeCodeForToken(
+      code as string,
+      org_slug as string,
+      integrationId as string,
+      locationsArr,
+    );
+
+    // On successful connection:
+    const flexRoot = this.configService.get<string>('flexRoot') || 'https://staging.officernd.com';
+    return res.redirect(302, `${flexRoot}/connect/external-integration/return`);
   }
 
   @Get('check')

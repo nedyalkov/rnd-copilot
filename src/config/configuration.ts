@@ -10,4 +10,5 @@ export default () => ({
     scopes: process.env.OAUTH_SCOPES || '',
     testUrl: process.env.OAUTH_TEST_URL || '',
   },
+  flexRoot: process.env.FLEX_ROOT || 'https://staging.officernd.com',
 });
