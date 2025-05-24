@@ -5,7 +5,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { HttpService } from '@nestjs/axios';
 import { OauthService } from './oauth.service';
 import { OAuthToken, OAuthTokenSchema } from './oauth.schema';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { Configuration, CONFIGURATION_KEY } from './config/configuration';
 
 const mockHttpService = {
@@ -66,155 +66,216 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     await model.deleteMany({});
   });
 
-  it('should exchange code for token and save to DB', async () => {
-    // Arrange
-    const tokenResponse = {
-      data: {
-        access_token: 'token',
-        refresh_token: 'refresh',
-        expires_in: 3600,
-      },
-    };
-    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
+  describe('Token exchange and refresh', () => {
+    it('should exchange code for token and save to DB', async () => {
+      // Arrange
+      const tokenResponse = {
+        data: {
+          access_token: 'token',
+          refresh_token: 'refresh',
+          expires_in: 3600,
+        },
+      };
+      mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
-    // Act
-    const token = await service.exchangeCodeForToken('code', 'org1', 'int1', ['loc1', 'loc2']);
+      // Act
+      const token = await service.exchangeCodeForToken('code', 'org1', 'int1', ['loc1', 'loc2']);
 
-    // Assert
-    expect(token.orgSlug).toBe('org1');
-    expect(token.integrationId).toBe('int1');
-    expect(token.accessToken).toBe('token');
-    expect(token.refreshToken).toBe('refresh');
-    expect(token.locations).toEqual(['loc1', 'loc2']);
-    // Check DB
-    const found = await model.findOne({ orgSlug: 'org1' }).lean();
-    expect(found).toBeDefined();
-    expect(found?.integrationId).toBe('int1');
-  });
-
-  it('should refresh token and save to DB', async () => {
-    // Arrange
-    const tokenResponse = {
-      data: {
-        access_token: 'token2',
-        refresh_token: 'refresh2',
-        expires_in: 3600,
-      },
-    };
-    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
-
-    // Act
-    const token = await service.refreshToken('refresh');
-
-    // Assert
-    expect(token.accessToken).toBe('token2');
-    expect(token.refreshToken).toBe('refresh2');
-    // Check DB
-    const found = await model.findOne({ refreshToken: 'refresh2' }).lean();
-    expect(found).toBeDefined();
-    expect(found?.accessToken).toBe('token2');
-  });
-
-  it('should send correct body and headers to token endpoint (exchangeCodeForToken)', async () => {
-    const tokenResponse = {
-      data: {
-        access_token: 'token',
-        refresh_token: 'refresh',
-        expires_in: 3600,
-      },
-    };
-    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
-
-    await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id', ['locA', 'locB']);
-
-    const [url, body, options] = mockHttpService.post.mock.calls[0] as [
-      string,
-      string,
-      { headers: Record<string, string> },
-    ];
-    expect(url).toBeDefined();
-    expect(body).toContain('grant_type=authorization_code');
-    expect(body).toContain('code=thecode');
-    expect(body).toContain('client_id=');
-    expect(body).toContain('client_secret=');
-    expect(body).toContain('redirect_uri=');
-    expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
-  });
-
-  it('should send correct body and headers to token endpoint (refreshToken)', async () => {
-    const tokenResponse = {
-      data: {
-        access_token: 'token2',
-        refresh_token: 'refresh2',
-        expires_in: 3600,
-      },
-    };
-    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
-
-    await service.refreshToken('refresh-token-value');
-
-    const [url, body, options] = mockHttpService.post.mock.calls[0] as [
-      string,
-      string,
-      { headers: Record<string, string> },
-    ];
-    expect(url).toBeDefined();
-    expect(body).toContain('grant_type=refresh_token');
-    expect(body).toContain('refresh_token=refresh-token-value');
-    expect(body).toContain('client_id=');
-    expect(body).toContain('client_secret=');
-    expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
-  });
-
-  it('should fetch and store integration secret after token exchange', async () => {
-    // Arrange: Save a token for the org/integration
-    const orgSlug = 'org1';
-    const integrationId = 'int1';
-    const tokenDoc: OAuthToken = await model.create({
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      expiresAt: new Date(Date.now() + 100000),
-      orgSlug,
-      integrationId,
+      // Assert
+      expect(token.orgSlug).toBe('org1');
+      expect(token.integrationId).toBe('int1');
+      expect(token.accessToken).toBe('token');
+      expect(token.refreshToken).toBe('refresh');
+      expect(token.locations).toEqual(['loc1', 'loc2']);
+      // Check DB
+      const found = await model.findOne({ orgSlug: 'org1' }).lean();
+      expect(found).toBeDefined();
+      expect(found?.integrationId).toBe('int1');
     });
-    // Mock FLEX API response
-    mockHttpService.get.mockReturnValueOnce(of({ data: { settings: { secret: 'the-secret' } } }));
 
-    // Act
-    await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+    it('should refresh token and save to DB', async () => {
+      // Arrange
+      const tokenResponse = {
+        data: {
+          access_token: 'token2',
+          refresh_token: 'refresh2',
+          expires_in: 3600,
+        },
+      };
+      mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
-    // Assert: Should call FLEX API with correct URL and headers
-    expect(mockHttpService.get).toHaveBeenCalledWith(
-      expect.stringContaining(`/organizations/${orgSlug}/integrations/${integrationId}`),
-      expect.objectContaining({
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        headers: expect.objectContaining({
-          Authorization: `Bearer ${tokenDoc.accessToken}`,
+      // Act
+      const token = await service.refreshToken('refresh');
+
+      // Assert
+      expect(token.accessToken).toBe('token2');
+      expect(token.refreshToken).toBe('refresh2');
+      // Check DB
+      const found = await model.findOne({ refreshToken: 'refresh2' }).lean();
+      expect(found).toBeDefined();
+      expect(found?.accessToken).toBe('token2');
+    });
+
+    it('should send correct body and headers to token endpoint (exchangeCodeForToken)', async () => {
+      const tokenResponse = {
+        data: {
+          access_token: 'token',
+          refresh_token: 'refresh',
+          expires_in: 3600,
+        },
+      };
+      mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
+
+      await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id', ['locA', 'locB']);
+
+      const [url, body, options] = mockHttpService.post.mock.calls[0] as [
+        string,
+        string,
+        { headers: Record<string, string> },
+      ];
+      expect(url).toBeDefined();
+      expect(body).toContain('grant_type=authorization_code');
+      expect(body).toContain('code=thecode');
+      expect(body).toContain('client_id=');
+      expect(body).toContain('client_secret=');
+      expect(body).toContain('redirect_uri=');
+      expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    });
+
+    it('should send correct body and headers to token endpoint (refreshToken)', async () => {
+      const tokenResponse = {
+        data: {
+          access_token: 'token2',
+          refresh_token: 'refresh2',
+          expires_in: 3600,
+        },
+      };
+      mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
+
+      await service.refreshToken('refresh-token-value');
+
+      const [url, body, options] = mockHttpService.post.mock.calls[0] as [
+        string,
+        string,
+        { headers: Record<string, string> },
+      ];
+      expect(url).toBeDefined();
+      expect(body).toContain('grant_type=refresh_token');
+      expect(body).toContain('refresh_token=refresh-token-value');
+      expect(body).toContain('client_id=');
+      expect(body).toContain('client_secret=');
+      expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    });
+  });
+
+  describe('Integration secret handshake', () => {
+    it('should fetch and store integration secret after token exchange', async () => {
+      // Arrange: Save a token for the org/integration
+      const orgSlug = 'org1';
+      const integrationId = 'int1';
+      const tokenDoc: OAuthToken = await model.create({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: new Date(Date.now() + 100000),
+        orgSlug,
+        integrationId,
+      });
+      // Mock FLEX API response
+      mockHttpService.get.mockReturnValueOnce(of({ data: { settings: { secret: 'the-secret' } } }));
+
+      // Act
+      await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+
+      // Assert: Should call FLEX API with correct URL and headers
+      expect(mockHttpService.get).toHaveBeenCalledWith(
+        expect.stringContaining(`/organizations/${orgSlug}/integrations/${integrationId}`),
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${tokenDoc.accessToken}`,
+          }),
         }),
-      }),
-    );
-    // Assert: Should store the secret in the DB
-    const updated = await model.findOne({ orgSlug, integrationId }).exec();
-    expect(updated?.integrationSecret).toBe('the-secret');
+      );
+      // Assert: Should store the secret in the DB
+      const updated = await model.findOne({ orgSlug, integrationId }).exec();
+      expect(updated?.integrationSecret).toBe('the-secret');
+    });
+
+    it('should not update secret if FLEX API returns no secret', async () => {
+      const orgSlug = 'org2';
+      const integrationId = 'int2';
+      await model.create({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: new Date(Date.now() + 100000),
+        orgSlug,
+        integrationId,
+      });
+      mockHttpService.get.mockReturnValueOnce(of({ data: { settings: {} } }));
+      await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+      const updated = await model.findOne({ orgSlug, integrationId }).lean();
+      expect(
+        Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
+          ? (updated as Record<string, unknown>).integrationSecret
+          : undefined,
+      ).toBeUndefined();
+    });
   });
 
-  it('should not update secret if FLEX API returns no secret', async () => {
-    const orgSlug = 'org2';
-    const integrationId = 'int2';
-    await model.create({
-      accessToken: 'access-token',
-      refreshToken: 'refresh-token',
-      expiresAt: new Date(Date.now() + 100000),
-      orgSlug,
-      integrationId,
+  describe('Connection check', () => {
+    it('should return true if checkConnection succeeds (valid token, API call ok)', async () => {
+      // Arrange: Save a valid token
+      await model.create({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: new Date(Date.now() + 100000),
+        orgSlug: 'org1',
+        integrationId: 'int1',
+      });
+      jest.spyOn(mockHttpService, 'get').mockReturnValueOnce(of({})); // Simulate successful API call
+
+      // Act
+      const { connected, message } = await service.checkConnection('org1', 'int1');
+
+      // Assert
+      expect(connected).toBe(true);
+      expect(message).toBeUndefined();
+      expect(mockHttpService.get).toHaveBeenCalled();
     });
-    mockHttpService.get.mockReturnValueOnce(of({ data: { settings: {} } }));
-    await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
-    const updated = await model.findOne({ orgSlug, integrationId }).lean();
-    expect(
-      Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
-        ? (updated as Record<string, unknown>).integrationSecret
-        : undefined,
-    ).toBeUndefined();
+
+    it('should return false and error message if checkConnection fails (API call throws)', async () => {
+      // Arrange: Save a valid token
+      await model.create({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: new Date(Date.now() + 100000),
+        orgSlug: 'org1',
+        integrationId: 'int1',
+      });
+      jest
+        .spyOn(mockHttpService, 'get')
+        .mockReturnValueOnce(throwError(() => new Error('API error')));
+
+      // Act
+      const { connected, message } = await service.checkConnection('org1', 'int1');
+
+      // Assert
+      expect(connected).toBe(false);
+      expect(message).toBe('API error');
+      expect(mockHttpService.get).toHaveBeenCalled();
+    });
+
+    it('should return false and message if no valid token exists', async () => {
+      // Arrange: Ensure no tokens in DB
+      await model.deleteMany({});
+
+      // Act
+      const { connected, message } = await service.checkConnection('org1', 'int1');
+
+      // Assert
+      expect(connected).toBe(false);
+      expect(message).toBe('No valid token found');
+      expect(mockHttpService.get).not.toHaveBeenCalled();
+    });
   });
 });

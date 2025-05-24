@@ -163,17 +163,31 @@ export class OauthService {
     return token;
   }
 
-  async checkConnection(): Promise<boolean> {
-    const token = await this.getValidToken();
-    if (!token) return false;
+  async checkConnection(
+    orgSlug?: string,
+    integrationId?: string,
+  ): Promise<{ connected: boolean; message?: string }> {
+    // If orgSlug and integrationId are provided, use them for token lookup
+    let token: OAuthToken | null;
+    if (orgSlug && integrationId) {
+      token = await this.oauthModel
+        .findOne({ orgSlug, integrationId })
+        .sort({ expiresAt: -1 })
+        .exec();
+    } else {
+      token = await this.getValidToken();
+    }
+    if (!token) return { connected: false, message: 'No valid token found' };
     const testUrl = `${this.cfg.flexRoot}/api/v2/organizations/${token.orgSlug}/integrations/${token.integrationId}`;
     try {
-      await this.httpService.axiosRef.get(testUrl, {
-        headers: { Authorization: `Bearer ${token.accessToken}` },
-      });
-      return true;
-    } catch {
-      return false;
+      await this.httpService
+        .get(testUrl, {
+          headers: { Authorization: `Bearer ${token.accessToken}` },
+        })
+        .toPromise();
+      return { connected: true };
+    } catch (err) {
+      return { connected: false, message: (err as Error)?.message || 'Unknown error' };
     }
   }
 }
