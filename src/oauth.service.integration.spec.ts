@@ -5,12 +5,11 @@ import { getModelToken } from '@nestjs/mongoose';
 import { HttpService } from '@nestjs/axios';
 import { OauthService } from './oauth.service';
 import { OAuthToken, OAuthTokenSchema } from './oauth.schema';
+import { of } from 'rxjs';
 
 const mockHttpService = {
-  axiosRef: {
-    post: jest.fn(),
-    get: jest.fn(),
-  },
+  post: jest.fn(),
+  get: jest.fn(),
 };
 
 describe('OauthService integration (mongodb-memory-server)', () => {
@@ -24,7 +23,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     await mongoose.connect(uri);
     try {
       mongoose.deleteModel('OAuthToken');
-    } catch {}
+    } catch {
+      /* empty */
+    }
     model = mongoose.model<OAuthToken>('OAuthToken', OAuthTokenSchema);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -42,6 +43,11 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     await mongoServer.stop();
   });
 
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    await model.deleteMany({});
+  });
+
   it('should exchange code for token and save to DB', async () => {
     // Arrange
     const tokenResponse = {
@@ -51,7 +57,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         expires_in: 3600,
       },
     };
-    mockHttpService.axiosRef.post.mockResolvedValueOnce(tokenResponse);
+    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
     // Act
     const token = await service.exchangeCodeForToken('code', 'org1', 'int1', ['loc1', 'loc2']);
@@ -77,7 +83,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         expires_in: 3600,
       },
     };
-    mockHttpService.axiosRef.post.mockResolvedValueOnce(tokenResponse);
+    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
     // Act
     const token = await service.refreshToken('refresh');
@@ -89,5 +95,56 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     const found = await model.findOne({ refreshToken: 'refresh2' }).lean();
     expect(found).toBeDefined();
     expect(found?.accessToken).toBe('token2');
+  });
+
+  it('should send correct body and headers to token endpoint (exchangeCodeForToken)', async () => {
+    const tokenResponse = {
+      data: {
+        access_token: 'token',
+        refresh_token: 'refresh',
+        expires_in: 3600,
+      },
+    };
+    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
+
+    await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id', ['locA', 'locB']);
+
+    const [url, body, options] = mockHttpService.post.mock.calls[0] as [
+      string,
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(url).toBeDefined();
+    expect(body).toContain('grant_type=authorization_code');
+    expect(body).toContain('code=thecode');
+    expect(body).toContain('client_id=');
+    expect(body).toContain('client_secret=');
+    expect(body).toContain('redirect_uri=');
+    expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+  });
+
+  it('should send correct body and headers to token endpoint (refreshToken)', async () => {
+    const tokenResponse = {
+      data: {
+        access_token: 'token2',
+        refresh_token: 'refresh2',
+        expires_in: 3600,
+      },
+    };
+    mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
+
+    await service.refreshToken('refresh-token-value');
+
+    const [url, body, options] = mockHttpService.post.mock.calls[0] as [
+      string,
+      string,
+      { headers: Record<string, string> },
+    ];
+    expect(url).toBeDefined();
+    expect(body).toContain('grant_type=refresh_token');
+    expect(body).toContain('refresh_token=refresh-token-value');
+    expect(body).toContain('client_id=');
+    expect(body).toContain('client_secret=');
+    expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
   });
 });
