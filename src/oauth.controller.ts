@@ -40,7 +40,7 @@ export class OauthController {
   }
 
   @Get('check')
-  async check() {
-    return { valid: await this.oauthService.checkConnection() };
+  async check(@Query('orgSlug') orgSlug?: string, @Query('integrationId') integrationId?: string) {
+    return this.oauthService.checkConnection(orgSlug, integrationId);
   }
 }
