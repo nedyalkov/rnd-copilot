@@ -10,7 +10,6 @@ export const configurationLoader = registerAs('configuration', () => ({
     tokenUrl: process.env.OAUTH_TOKEN_URL || '',
     authUrl: process.env.OAUTH_AUTH_URL || '',
     scopes: process.env.OAUTH_SCOPES || '',
-    testUrl: process.env.OAUTH_TEST_URL || '',
   },
   flexRoot: process.env.FLEX_ROOT || 'https://staging.officernd.com',
 }));

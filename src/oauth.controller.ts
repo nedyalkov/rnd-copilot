@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Post, Query, Res } from '@nestjs/common';
+import { Controller, Get, Inject, Query, Res } from '@nestjs/common';
 import { OauthService } from './oauth.service';
 import { Response } from 'express';
 import { Configuration, CONFIGURATION_KEY } from './config/configuration';
@@ -42,10 +42,5 @@ export class OauthController {
   @Get('check')
   async check() {
     return { valid: await this.oauthService.checkConnection() };
-  }
-
-  @Post('refresh')
-  async refresh(@Query('refresh_token') refreshToken: string) {
-    return this.oauthService.refreshToken(refreshToken);
   }
 }
