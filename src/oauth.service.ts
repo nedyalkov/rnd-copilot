@@ -12,6 +12,16 @@ interface TokenResponse {
   expires_in: number;
 }
 
+interface IntegrationSettings {
+  secret?: string;
+  [key: string]: any;
+}
+
+interface IntegrationResponse {
+  settings?: IntegrationSettings;
+  [key: string]: any;
+}
+
 @Injectable()
 export class OauthService {
   constructor(
@@ -57,6 +67,10 @@ export class OauthService {
         locations,
       });
       await token.save();
+      // After saving the token, fetch and store the integration secret
+      if (orgSlug && integrationId) {
+        await this.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+      }
       return token;
     } catch (error) {
       if (error instanceof AxiosError) {
@@ -64,6 +78,41 @@ export class OauthService {
         console.error('Error exchanging code for token:', error.response?.data);
       }
       throw new Error('Failed to exchange code for token');
+    }
+  }
+
+  async fetchAndStoreIntegrationSecret(orgSlug: string, integrationId: string): Promise<void> {
+    const config = configuration();
+    const flexRoot = config.flexRoot;
+    // Get the latest valid token for this orgSlug
+    const token = await this.oauthModel
+      .findOne({ orgSlug, integrationId })
+      .sort({ expiresAt: -1 })
+      .exec();
+    if (!token) return;
+    const accessToken = token.accessToken;
+    try {
+      const integrationResp = await this.httpService
+        .get<IntegrationResponse>(
+          `${flexRoot}/api/v2/organizations/${orgSlug}/integrations/${integrationId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        )
+        .toPromise();
+      const secret = integrationResp?.data?.settings?.secret;
+      // Store secret in the DB (extend schema/service as needed)
+      if (secret) {
+        await this.oauthModel.updateOne(
+          { orgSlug, integrationId },
+          { $set: { integrationSecret: secret } },
+        );
+      }
+    } catch {
+      // Handle error (log, fail, etc.)
     }
   }
 

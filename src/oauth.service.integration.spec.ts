@@ -147,4 +147,59 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     expect(body).toContain('client_secret=');
     expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
   });
+
+  it('should fetch and store integration secret after token exchange', async () => {
+    // Arrange: Save a token for the org/integration
+    const orgSlug = 'org1';
+    const integrationId = 'int1';
+    const tokenDoc = await model.create({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: new Date(Date.now() + 100000),
+      orgSlug,
+      integrationId,
+    });
+    // Mock FLEX API response
+    mockHttpService.get.mockReturnValueOnce(of({ data: { settings: { secret: 'the-secret' } } }));
+
+    // Act
+    await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+
+    // Assert: Should call FLEX API with correct URL and headers
+    expect(mockHttpService.get).toHaveBeenCalledWith(
+      expect.stringContaining(`/organizations/${orgSlug}/integrations/${integrationId}`),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: `Bearer ${tokenDoc.accessToken}`,
+        }),
+      }),
+    );
+    // Assert: Should store the secret in the DB
+    const updated = await model.findOne({ orgSlug, integrationId }).lean();
+    expect(
+      Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
+        ? (updated as Record<string, unknown>).integrationSecret
+        : undefined,
+    ).toBe('the-secret');
+  });
+
+  it('should not update secret if FLEX API returns no secret', async () => {
+    const orgSlug = 'org2';
+    const integrationId = 'int2';
+    await model.create({
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      expiresAt: new Date(Date.now() + 100000),
+      orgSlug,
+      integrationId,
+    });
+    mockHttpService.get.mockReturnValueOnce(of({ data: { settings: {} } }));
+    await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+    const updated = await model.findOne({ orgSlug, integrationId }).lean();
+    expect(
+      Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
+        ? (updated as Record<string, unknown>).integrationSecret
+        : undefined,
+    ).toBeUndefined();
+  });
 });

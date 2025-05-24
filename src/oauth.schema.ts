@@ -18,6 +18,9 @@ export class OAuthToken extends Document {
   @Prop()
   integrationId?: string;
 
+  @Prop()
+  integrationSecret?: string;
+
   @Prop({ type: [String] })
   locations?: string[];
 }
