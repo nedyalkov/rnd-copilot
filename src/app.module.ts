@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { Item, ItemSchema } from './item.schema';
@@ -11,6 +9,7 @@ import { OauthService } from './oauth.service';
 import { OauthController } from './oauth.controller';
 import { HttpModule } from '@nestjs/axios';
 import { configurationLoader } from './config/configuration';
+import { FrontendController } from './frontend.controller';
 
 @Module({
   imports: [
@@ -28,7 +27,7 @@ import { configurationLoader } from './config/configuration';
     HttpModule,
     MongooseModule.forFeature([{ name: OAuthToken.name, schema: OAuthTokenSchema }]),
   ],
-  controllers: [AppController, ItemController, OauthController],
-  providers: [AppService, ItemService, OauthService],
+  controllers: [ItemController, OauthController, FrontendController],
+  providers: [ItemService, OauthService],
 })
 export class AppModule {}
