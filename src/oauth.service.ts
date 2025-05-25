@@ -135,6 +135,8 @@ export class OauthService {
   async refreshToken(refreshToken: string): Promise<OAuthToken> {
     const { clientId, clientSecret, tokenUrl } = this.cfg.oauth;
 
+    console.log('Refreshing token with refreshToken:', refreshToken);
+
     interface TokenResponse {
       access_token: string;
       refresh_token: string;
@@ -163,8 +165,17 @@ export class OauthService {
     return token;
   }
 
-  async getValidToken(): Promise<OAuthToken | null> {
-    const token = await this.oauthModel.findOne().sort({ expiresAt: -1 }).exec();
+  async getValidToken(orgSlug: string, integrationId: string): Promise<OAuthToken | null> {
+    console.log('Getting valid token for orgSlug:', orgSlug, 'integrationId:', integrationId);
+    const token = await this.oauthModel
+      .findOne({
+        orgSlug,
+        integrationId,
+      })
+      .sort({ expiresAt: -1 })
+      .exec();
+
+    console.log('Retrieved token:', token);
     if (!token) return null;
     if (token.expiresAt.getTime() < Date.now()) {
       return this.refreshToken(token.refreshToken);
@@ -177,14 +188,9 @@ export class OauthService {
     integrationId?: string,
   ): Promise<{ connected: boolean; message?: string }> {
     // If orgSlug and integrationId are provided, use them for token lookup
-    let token: OAuthToken | null;
+    let token: OAuthToken | null = null;
     if (orgSlug && integrationId) {
-      token = await this.oauthModel
-        .findOne({ orgSlug, integrationId })
-        .sort({ expiresAt: -1 })
-        .exec();
-    } else {
-      token = await this.getValidToken();
+      token = await this.getValidToken(orgSlug, integrationId);
     }
     // If no token found, return not connected
     if (!token) return { connected: false, message: 'No valid token found' };

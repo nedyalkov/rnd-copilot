@@ -1,4 +1,13 @@
-import { Controller, Get, Inject, Query, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Query,
+  Res,
+  Redirect,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { OauthService } from './oauth.service';
 import { Response } from 'express';
 import { Configuration, CONFIGURATION_KEY } from './config/configuration';
@@ -29,18 +38,45 @@ export class OauthController {
   }
 
   @Get('return')
-  async oauthReturn(@Query() query: OauthReturnQueryDto, @Res() res: Response) {
+  @Redirect()
+  async oauthReturn(@Query() query: OauthReturnQueryDto) {
     const { code, org_slug, integrationId, locations } = query;
     const locationsArr = locations ? locations.split(',').filter(Boolean) : undefined;
     await this.oauthService.connectIntegration(code, org_slug, integrationId, locationsArr);
 
     // On successful connection:
     const flexRoot = this.cfg.flexRoot;
-    return res.redirect(302, `${flexRoot}/connect/external-integration/return`);
+    return { url: `${flexRoot}/connect/external-integration/return`, statusCode: 302 };
   }
 
   @Get('check')
   async check(@Query('orgSlug') orgSlug?: string, @Query('integrationId') integrationId?: string) {
     return this.oauthService.checkConnection(orgSlug, integrationId);
+  }
+
+  @Get('configure')
+  @Redirect()
+  async configure(
+    @Query('orgSlug') orgSlug: string,
+    @Query('integrationId') integrationId: string,
+  ) {
+    try {
+      console.log('Configuring OAuth for orgSlug:', orgSlug, 'integrationId:', integrationId);
+      // Check if OAuth item exists
+      const token = await this.oauthService.getValidToken(orgSlug, integrationId);
+      console.log('Retrieved token:', token);
+      if (!token) {
+        throw new NotFoundException(
+          'OAuth integration not found for this orgSlug and integrationId.',
+        );
+      }
+      return { url: `/${orgSlug}`, statusCode: 302 };
+    } catch (error) {
+      console.error('Error during OAuth configuration:', error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('An error occurred while configuring the OAuth integration.');
+    }
   }
 }
