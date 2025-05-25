@@ -517,7 +517,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(refreshed?.refreshToken).toBe('new-refresh');
       expect(refreshed?.locations).toEqual(['loc1', 'loc2']);
       // Assert: DB is updated
-      const dbToken = await model.findOne({ orgSlug: 'org-refresh', integrationId: 'int-refresh' }).lean();
+      const dbToken = await model
+        .findOne({ orgSlug: 'org-refresh', integrationId: 'int-refresh' })
+        .lean();
       expect(dbToken?.accessToken).toBe('new-access');
       expect(dbToken?.refreshToken).toBe('new-refresh');
       expect(dbToken?.locations).toEqual(['loc1', 'loc2']);
