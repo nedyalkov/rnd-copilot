@@ -9,3 +9,7 @@ The application should also include a README file with setup instructions, key e
 The application should be designed to be easily extendable for future features, such as additional OAuth providers or enhanced integration capabilities with OfficeRnD APIs.
 
 Make sure to use yarn as the package manager for dependency management, and include scripts for starting the application, running tests, and formatting code. The project should be set up to run in a development environment with hot reloading capabilities.
+
+Commit messages need to follow conventional commits guidelines and need to be split where possible. I don't need to confirm every message - only the ones you are not sure about.
+
+The API docs for OfficeRnD and its Identity service are hosted here - https://developer.officernd.com/docs/welcome - read them through. Also, you should not use the host/domain names as they are variables in this project.
