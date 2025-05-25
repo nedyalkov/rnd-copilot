@@ -121,6 +121,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       const found = await model.findOne({ refreshToken: 'refresh2' }).lean();
       expect(found).toBeDefined();
       expect(found?.accessToken).toBe('token2');
+      // Ensure only one token exists for org/integration
+      const all = await model.find({ orgSlug: 'org1', integrationId: 'int1' }).lean();
+      expect(all.length).toBe(1);
     });
 
     it('should send correct body and headers to token endpoint (exchangeCodeForToken)', async () => {
@@ -181,6 +184,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(body).toContain('client_id=');
       expect(body).toContain('client_secret=');
       expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+      // Ensure only one token exists for org/integration
+      const all = await model.find({ orgSlug: 'org1', integrationId: 'int1' }).lean();
+      expect(all.length).toBe(1);
     });
 
     it('should update the existing token document on refresh, preserving orgSlug/integrationId/locations', async () => {
@@ -188,7 +194,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       const orgSlug = 'org-refresh';
       const integrationId = 'int-refresh';
       const locations = ['loc1', 'loc2'];
-      const oldToken = await model.create({
+      await model.create({
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
