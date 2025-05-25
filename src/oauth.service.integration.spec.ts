@@ -232,14 +232,17 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         orgSlug: 'org1',
         integrationId: 'int1',
       });
-      jest.spyOn(mockHttpService, 'get').mockReturnValueOnce(of({})); // Simulate successful API call
+      // Mock a valid integration response with a 'settings' object
+      jest
+        .spyOn(mockHttpService, 'get')
+        .mockReturnValueOnce(of({ data: { settings: { secret: 'abc' } } }));
 
       // Act
-      const { connected, message } = await service.checkConnection('org1', 'int1');
+      const result = await service.checkConnection('org1', 'int1');
 
       // Assert
-      expect(connected).toBe(true);
-      expect(message).toBeUndefined();
+      expect(result.connected).toBe(true);
+      expect(result.message).toBeUndefined();
       expect(mockHttpService.get).toHaveBeenCalled();
     });
 
