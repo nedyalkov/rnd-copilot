@@ -94,7 +94,14 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     });
 
     it('should refresh token and save to DB', async () => {
-      // Arrange
+      // Arrange: Save a token to be refreshed
+      await model.create({
+        accessToken: 'token-old',
+        refreshToken: 'refresh',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        orgSlug: 'org1',
+        integrationId: 'int1',
+      });
       const tokenResponse = {
         data: {
           access_token: 'token2',
@@ -143,6 +150,14 @@ describe('OauthService integration (mongodb-memory-server)', () => {
     });
 
     it('should send correct body and headers to token endpoint (refreshToken)', async () => {
+      // Arrange: Save a token to be refreshed
+      await model.create({
+        accessToken: 'token-old',
+        refreshToken: 'refresh-token-value',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        orgSlug: 'org1',
+        integrationId: 'int1',
+      });
       const tokenResponse = {
         data: {
           access_token: 'token2',
@@ -152,6 +167,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       };
       mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
+      // Act
       await service.refreshToken('refresh-token-value');
 
       const [url, body, options] = mockHttpService.post.mock.calls[0] as [
@@ -165,6 +181,42 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(body).toContain('client_id=');
       expect(body).toContain('client_secret=');
       expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
+    });
+
+    it('should update the existing token document on refresh, preserving orgSlug/integrationId/locations', async () => {
+      // Arrange: Save a token with orgSlug, integrationId, and locations
+      const orgSlug = 'org-refresh';
+      const integrationId = 'int-refresh';
+      const locations = ['loc1', 'loc2'];
+      const oldToken = await model.create({
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        orgSlug,
+        integrationId,
+        locations,
+      });
+      // Mock OfficeRnD token refresh response
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            access_token: 'new-access',
+            refresh_token: 'new-refresh',
+            expires_in: 3600,
+          },
+        }),
+      );
+      // Act
+      const refreshed = await service.refreshToken('old-refresh');
+      // Assert
+      expect(refreshed.accessToken).toBe('new-access');
+      expect(refreshed.refreshToken).toBe('new-refresh');
+      expect(refreshed.orgSlug).toBe(orgSlug);
+      expect(refreshed.integrationId).toBe(integrationId);
+      expect(refreshed.locations).toEqual(locations);
+      // Should not create a duplicate
+      const all = await model.find({ orgSlug, integrationId }).lean();
+      expect(all.length).toBe(1);
     });
   });
 

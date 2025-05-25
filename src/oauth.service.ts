@@ -137,11 +137,9 @@ export class OauthService {
 
     console.log('Refreshing token with refreshToken:', refreshToken);
 
-    interface TokenResponse {
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-    }
+    // Try to find the existing token document
+    let existing = await this.oauthModel.findOne({ refreshToken }).exec();
+
     const params = new URLSearchParams();
     params.append('grant_type', 'refresh_token');
     params.append('refresh_token', refreshToken);
@@ -155,14 +153,23 @@ export class OauthService {
       .toPromise();
     if (!response) throw new Error('No response from token endpoint');
     const { access_token, refresh_token, expires_in } = response.data;
-    const expiresAt = new Date(Date.now() + expires_in * 1000);
-    const token = new this.oauthModel({
-      accessToken: String(access_token),
-      refreshToken: String(refresh_token),
-      expiresAt,
-    });
-    await token.save();
-    return token;
+
+    if (existing) {
+      existing.accessToken = String(access_token);
+      existing.refreshToken = String(refresh_token);
+      existing.expiresAt = new Date(Date.now() + expires_in * 1000);
+      await existing.save();
+      return existing;
+    } else {
+      // Fallback: create a new token (legacy/test case)
+      const token = new this.oauthModel({
+        accessToken: String(access_token),
+        refreshToken: String(refresh_token),
+        expiresAt: new Date(Date.now() + expires_in * 1000),
+      });
+      await token.save();
+      return token;
+    }
   }
 
   async getValidToken(orgSlug: string, integrationId: string): Promise<OAuthToken | null> {
