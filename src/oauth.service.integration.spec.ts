@@ -489,5 +489,38 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         .lean();
       expect(found?.accessToken).toBe('valid-access');
     });
+
+    it('should update the token in the DB when getValidToken triggers a refresh', async () => {
+      // Arrange: Save an expired token
+      await model.create({
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        orgSlug: 'org-refresh',
+        integrationId: 'int-refresh',
+        locations: ['loc1', 'loc2'],
+      });
+      // Mock OfficeRnD token refresh response
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            access_token: 'new-access',
+            refresh_token: 'new-refresh',
+            expires_in: 3600,
+          },
+        }),
+      );
+      // Act
+      const refreshed = await service.getValidToken('org-refresh', 'int-refresh');
+      // Assert: token object is updated
+      expect(refreshed?.accessToken).toBe('new-access');
+      expect(refreshed?.refreshToken).toBe('new-refresh');
+      expect(refreshed?.locations).toEqual(['loc1', 'loc2']);
+      // Assert: DB is updated
+      const dbToken = await model.findOne({ orgSlug: 'org-refresh', integrationId: 'int-refresh' }).lean();
+      expect(dbToken?.accessToken).toBe('new-access');
+      expect(dbToken?.refreshToken).toBe('new-refresh');
+      expect(dbToken?.locations).toEqual(['loc1', 'loc2']);
+    });
   });
 });
