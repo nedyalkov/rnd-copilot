@@ -525,4 +525,64 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(dbToken?.locations).toEqual(['loc1', 'loc2']);
     });
   });
+
+  describe('Refresh token rotation', () => {
+    it('should store the new refresh token after refresh and use it for subsequent refreshes', async () => {
+      // Arrange: Save an expired token
+      await model.create({
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        orgSlug: 'org-rotate',
+        integrationId: 'int-rotate',
+        locations: ['loc1'],
+      });
+      // First refresh response
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            access_token: 'new-access',
+            refresh_token: 'new-refresh',
+            expires_in: 3600,
+          },
+        }),
+      );
+      // Act: First refresh
+      const refreshed = await service.getValidToken('org-rotate', 'int-rotate');
+      // Assert: DB is updated with new refresh token
+      const dbToken = await model
+        .findOne({ orgSlug: 'org-rotate', integrationId: 'int-rotate' })
+        .lean();
+      expect(dbToken?.refreshToken).toBe('new-refresh');
+      expect(refreshed?.refreshToken).toBe('new-refresh');
+
+      // Second refresh: should use the new refresh token
+      // Expire the token
+      await model.updateOne(
+        { orgSlug: 'org-rotate', integrationId: 'int-rotate' },
+        { $set: { expiresAt: new Date(Date.now() - 1000) } },
+      );
+      // Mock OfficeRnD token refresh response for the new refresh token
+      mockHttpService.post.mockReturnValueOnce(
+        of({
+          data: {
+            access_token: 'newest-access',
+            refresh_token: 'newest-refresh',
+            expires_in: 3600,
+          },
+        }),
+      );
+      const refreshedAgain = await service.getValidToken('org-rotate', 'int-rotate');
+      const dbTokenAgain = await model
+        .findOne({ orgSlug: 'org-rotate', integrationId: 'int-rotate' })
+        .lean();
+      expect(dbTokenAgain?.refreshToken).toBe('newest-refresh');
+      expect(refreshedAgain?.refreshToken).toBe('newest-refresh');
+      // Ensure the correct refresh token was used in the request
+      const firstCall = mockHttpService.post.mock.calls[0][1];
+      expect(firstCall).toContain('refresh_token=old-refresh');
+      const secondCall = mockHttpService.post.mock.calls[1][1];
+      expect(secondCall).toContain('refresh_token=new-refresh');
+    });
+  });
 });
