@@ -132,43 +132,44 @@ export class OauthService {
     }
   }
 
-  async refreshToken(refreshToken: string): Promise<OAuthToken> {
+  async refreshToken(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
     const { clientId, clientSecret, tokenUrl } = this.cfg.oauth;
 
     console.log('Refreshing token with refreshToken:', refreshToken);
 
-    // Try to find the existing token document
-    let existing = await this.oauthModel.findOne({ refreshToken }).exec();
+    try {
+      const params = new URLSearchParams();
+      params.append('grant_type', 'refresh_token');
+      params.append('refresh_token', refreshToken);
+      params.append('client_id', clientId);
+      params.append('client_secret', clientSecret);
+      const data = params.toString();
 
-    const params = new URLSearchParams();
-    params.append('grant_type', 'refresh_token');
-    params.append('refresh_token', refreshToken);
-    params.append('client_id', clientId);
-    params.append('client_secret', clientSecret);
-    const data = params.toString();
-    const response = await this.httpService
-      .post<TokenResponse>(tokenUrl, data, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      })
-      .toPromise();
-    if (!response) throw new Error('No response from token endpoint');
-    const { access_token, refresh_token, expires_in } = response.data;
+      console.log('Token refresh data:', data);
+      console.log('Token URL:', tokenUrl);
+      const response = await this.httpService
+        .post<TokenResponse>(tokenUrl, data, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        })
+        .toPromise();
+      if (!response) throw new Error('No response from token endpoint');
+      const { access_token, refresh_token, expires_in } = response.data;
 
-    if (existing) {
-      existing.accessToken = String(access_token);
-      existing.refreshToken = String(refresh_token);
-      existing.expiresAt = new Date(Date.now() + expires_in * 1000);
-      await existing.save();
-      return existing;
-    } else {
-      // Fallback: create a new token (legacy/test case)
-      const token = new this.oauthModel({
-        accessToken: String(access_token),
-        refreshToken: String(refresh_token),
+      return {
+        accessToken: access_token,
+        refreshToken: refresh_token,
         expiresAt: new Date(Date.now() + expires_in * 1000),
-      });
-      await token.save();
-      return token;
+      };
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        console.error('Error refreshing token:', error.response?.data);
+        throw new Error('Failed to refresh token: ' + error.response?.data);
+      } else {
+        console.error('Error refreshing token:', error);
+        throw new Error('Failed to refresh token');
+      }
     }
   }
 
@@ -185,7 +186,14 @@ export class OauthService {
     console.log('Retrieved token:', token);
     if (!token) return null;
     if (token.expiresAt.getTime() < Date.now()) {
-      return this.refreshToken(token.refreshToken);
+      const newTokenInfo = await this.refreshToken(token.refreshToken);
+
+      token.accessToken = newTokenInfo.accessToken;
+      token.refreshToken = newTokenInfo.refreshToken;
+      token.expiresAt = newTokenInfo.expiresAt;
+
+      await token.save();
+      console.log('Token refreshed:', token);
     }
     return token;
   }
