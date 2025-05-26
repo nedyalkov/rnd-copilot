@@ -28,7 +28,7 @@ import { StatusController } from './status.controller';
     HttpModule,
     MongooseModule.forFeature([{ name: OAuthToken.name, schema: OAuthTokenSchema }]),
   ],
-  controllers: [ItemController, OauthController, FrontendController, StatusController],
+  controllers: [ItemController, OauthController, StatusController, FrontendController],
   providers: [ItemService, OauthService],
 })
 export class AppModule {}
