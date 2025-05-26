@@ -1,5 +1,6 @@
 import { OauthService } from './oauth.service';
 import { Configuration } from './config/configuration';
+import { OauthController } from './oauth.controller';
 
 describe('OauthController', () => {
   let service: OauthService & { connectIntegration: jest.Mock };
@@ -21,7 +22,6 @@ describe('OauthController', () => {
   });
 
   it('should return redirect object to flexRoot on successful connection', async () => {
-    const { OauthController } = await import('./oauth.controller');
     const controller = new OauthController(service, config);
     const query = {
       code: 'thecode',

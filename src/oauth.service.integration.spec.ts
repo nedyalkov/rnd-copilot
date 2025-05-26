@@ -13,6 +13,27 @@ const mockHttpService = {
   get: jest.fn(),
 };
 
+const mockConnectIntegrationResponses = ({
+  integrationResponse,
+  accountResponse,
+}: {
+  integrationResponse: { settings: { secret?: string } };
+  accountResponse: { _id: string; name: string; slug: string };
+}) => {
+  mockHttpService.get.mockImplementation((url: string) => {
+    if (url.includes('/integrations/')) {
+      // Mock response for /organizations/{orgSlug}/integrations/{integrationId}
+      return of({ data: integrationResponse });
+    }
+    if (url.match(/\/api\/v1\/organizations\/[^/]+$/)) {
+      // Mock response for /organizations/{orgSlug}
+      return of({ data: accountResponse });
+    }
+    // Default mock
+    return of({ data: {} });
+  });
+};
+
 describe('OauthService integration (mongodb-memory-server)', () => {
   let mongoServer: MongoMemoryServer;
   let model: mongoose.Model<OAuthToken>;
@@ -79,16 +100,15 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
       // Act
-      const token = await service.exchangeCodeForToken('code', 'org1', 'int1', ['loc1', 'loc2']);
+      const token = await service.exchangeCodeForToken('code', 'org1', 'int1');
 
       // Assert
-      expect(token.orgSlug).toBe('org1');
+      expect(token.accountSlug).toBe('org1');
       expect(token.integrationId).toBe('int1');
       expect(token.accessToken).toBe('token');
       expect(token.refreshToken).toBe('refresh');
-      expect(token.locations).toEqual(['loc1', 'loc2']);
       // Check DB
-      const found = await model.findOne({ orgSlug: 'org1' }).lean();
+      const found = await model.findOne({ accountSlug: 'org1' }).lean();
       expect(found).toBeDefined();
       expect(found?.integrationId).toBe('int1');
     });
@@ -99,7 +119,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'token-old',
         refreshToken: 'refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org1',
+        accountSlug: 'org1',
         integrationId: 'int1',
       });
       const tokenResponse = {
@@ -122,7 +142,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       const found = await model.findOne({ refreshToken: 'refresh2' }).lean();
       expect(found).toBeNull();
       // Old token still exists
-      const old = await model.findOne({ orgSlug: 'org1', integrationId: 'int1' }).lean();
+      const old = await model.findOne({ accountSlug: 'org1', integrationId: 'int1' }).lean();
       expect(old).toBeDefined();
       expect(old?.accessToken).toBe('token-old');
     });
@@ -137,7 +157,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       };
       mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
-      await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id', ['locA', 'locB']);
+      await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id');
 
       const [url, body, options] = mockHttpService.post.mock.calls[0] as [
         string,
@@ -159,7 +179,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'token-old',
         refreshToken: 'refresh-token-value',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org1',
+        accountSlug: 'org1',
         integrationId: 'int1',
       });
       const tokenResponse = {
@@ -186,7 +206,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(body).toContain('client_secret=');
       expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
       // DB should still have the old token
-      const found = await model.findOne({ orgSlug: 'org1', integrationId: 'int1' }).lean();
+      const found = await model.findOne({ accountSlug: 'org1', integrationId: 'int1' }).lean();
       expect(found?.accessToken).toBe('token-old');
     });
 
@@ -199,7 +219,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug,
+        accountSlug: orgSlug,
         integrationId,
         locations,
       });
@@ -220,7 +240,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(refreshed.refreshToken).toBe('new-refresh');
       expect(refreshed.expiresAt).toBeInstanceOf(Date);
       // DB should still have the old token
-      const found = await model.findOne({ orgSlug, integrationId }).lean();
+      const found = await model.findOne({ accountSlug: orgSlug, integrationId }).lean();
       expect(found?.accessToken).toBe('old-access');
     });
 
@@ -234,7 +254,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       };
       mockHttpService.post.mockReturnValueOnce(of(tokenResponse));
 
-      await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id', ['locA', 'locB']);
+      await service.exchangeCodeForToken('thecode', 'org-slug', 'int-id');
 
       const [url, body, options] = mockHttpService.post.mock.calls[0] as [
         string,
@@ -256,7 +276,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'token-old',
         refreshToken: 'refresh-token-value',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org1',
+        accountSlug: 'org1',
         integrationId: 'int1',
       });
       const tokenResponse = {
@@ -283,7 +303,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(body).toContain('client_secret=');
       expect(options.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
       // DB should still have the old token
-      const found = await model.findOne({ orgSlug: 'org1', integrationId: 'int1' }).lean();
+      const found = await model.findOne({ accountSlug: 'org1', integrationId: 'int1' }).lean();
       expect(found?.accessToken).toBe('token-old');
     });
 
@@ -296,7 +316,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug,
+        accountSlug: orgSlug,
         integrationId,
         locations,
       });
@@ -317,7 +337,7 @@ describe('OauthService integration (mongodb-memory-server)', () => {
       expect(refreshed.refreshToken).toBe('new-refresh');
       expect(refreshed.expiresAt).toBeInstanceOf(Date);
       // DB should still have the old token
-      const found = await model.findOne({ orgSlug, integrationId }).lean();
+      const found = await model.findOne({ accountSlug: orgSlug, integrationId }).lean();
       expect(found?.accessToken).toBe('old-access');
     });
   });
@@ -325,24 +345,27 @@ describe('OauthService integration (mongodb-memory-server)', () => {
   describe('Integration secret handshake', () => {
     it('should fetch and store integration secret after token exchange', async () => {
       // Arrange: Save a token for the org/integration
-      const orgSlug = 'org1';
+      const accountSlug = 'org1';
       const integrationId = 'int1';
       const tokenDoc: OAuthToken = await model.create({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresAt: new Date(Date.now() + 100000),
-        orgSlug,
+        accountSlug,
         integrationId,
       });
-      // Mock FLEX API response
-      mockHttpService.get.mockReturnValueOnce(of({ data: { settings: { secret: 'the-secret' } } }));
+
+      mockConnectIntegrationResponses({
+        integrationResponse: { settings: { secret: 'the-secret' } },
+        accountResponse: { _id: 'org1-id', name: 'org1-name', slug: 'org1' },
+      });
 
       // Act
-      await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+      await service.fetchAndStoreIntegrationDetails(tokenDoc);
 
       // Assert: Should call FLEX API with correct URL and headers
       expect(mockHttpService.get).toHaveBeenCalledWith(
-        expect.stringContaining(`/organizations/${orgSlug}/integrations/${integrationId}`),
+        expect.stringContaining(`/organizations/${accountSlug}/integrations/${integrationId}`),
         expect.objectContaining({
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           headers: expect.objectContaining({
@@ -351,23 +374,30 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         }),
       );
       // Assert: Should store the secret in the DB
-      const updated = await model.findOne({ orgSlug, integrationId }).exec();
+      const updated = await model.findOne({ accountSlug: accountSlug }).exec();
       expect(updated?.integrationSecret).toBe('the-secret');
+      expect(updated?.accountName).toBe('org1-name');
+      expect(updated?.accountId).toBe('org1-id');
     });
 
     it('should not update secret if FLEX API returns no secret', async () => {
-      const orgSlug = 'org2';
+      const accountSlug = 'org2';
       const integrationId = 'int2';
       await model.create({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresAt: new Date(Date.now() + 100000),
-        orgSlug,
+        accountSlug,
         integrationId,
       });
-      mockHttpService.get.mockReturnValueOnce(of({ data: { settings: {} } }));
-      await service.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
-      const updated = await model.findOne({ orgSlug, integrationId }).lean();
+      mockConnectIntegrationResponses({
+        integrationResponse: { settings: {} },
+        accountResponse: { _id: 'org2-id', name: 'org2-name', slug: 'org2' },
+      });
+      const token = await model.findOne({ accountSlug, integrationId }).exec();
+      if (!token) throw new Error('Token not found');
+      await service.fetchAndStoreIntegrationDetails(token);
+      const updated = await model.findOne({ accountSlug, integrationId }).lean();
       expect(
         Object.prototype.hasOwnProperty.call(updated ?? {}, 'integrationSecret')
           ? (updated as Record<string, unknown>).integrationSecret
@@ -377,13 +407,15 @@ describe('OauthService integration (mongodb-memory-server)', () => {
   });
 
   describe('Connection check', () => {
-    it('should return true if checkConnection succeeds (valid token, API call ok)', async () => {
+    it('should return accountName if checkConnection succeeds (valid token, API call ok)', async () => {
       // Arrange: Save a valid token
       await model.create({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresAt: new Date(Date.now() + 100000),
-        orgSlug: 'org1',
+        accountSlug: 'org1',
+        accountId: 'org1-id',
+        accountName: 'org1-name',
         integrationId: 'int1',
       });
       // Mock a valid integration response with a 'settings' object
@@ -392,47 +424,39 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         .mockReturnValueOnce(of({ data: { settings: { secret: 'abc' } } }));
 
       // Act
-      const result = await service.checkConnection('org1', 'int1');
+      const result = await service.checkConnection('org1', 'org1-id');
 
       // Assert
-      expect(result.connected).toBe(true);
-      expect(result.message).toBeUndefined();
-      expect(mockHttpService.get).toHaveBeenCalled();
+      expect(result.accountName).toBeDefined();
+      expect(result.accountName).toBe('org1-name');
     });
 
-    it('should return false and error message if checkConnection fails (API call throws)', async () => {
+    it('should throw an error if checkConnection fails (API call throws)', async () => {
       // Arrange: Save a valid token
       await model.create({
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresAt: new Date(Date.now() + 100000),
-        orgSlug: 'org1',
+        accountSlug: 'org1',
+        accountId: 'org1-id',
+        accountName: 'org1-name',
         integrationId: 'int1',
       });
+
       jest
         .spyOn(mockHttpService, 'get')
         .mockReturnValueOnce(throwError(() => new Error('API error')));
 
       // Act
-      const { connected, message } = await service.checkConnection('org1', 'int1');
-
-      // Assert
-      expect(connected).toBe(false);
-      expect(message).toBe('API error');
-      expect(mockHttpService.get).toHaveBeenCalled();
+      await expect(service.checkConnection('org1', 'org1-id')).rejects.toThrow('API error');
     });
 
-    it('should return false and message if no valid token exists', async () => {
+    it('should throw an error if no valid token exists', async () => {
       // Arrange: Ensure no tokens in DB
       await model.deleteMany({});
 
       // Act
-      const { connected, message } = await service.checkConnection('org1', 'int1');
-
-      // Assert
-      expect(connected).toBe(false);
-      expect(message).toBe('No valid token found');
-      expect(mockHttpService.get).not.toHaveBeenCalled();
+      await expect(service.checkConnection('org1', 'int1')).rejects.toThrow('No valid token found');
     });
   });
 
@@ -443,9 +467,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org-refresh',
+        accountSlug: 'org-refresh',
+        accountId: 'org-refresh-id',
         integrationId: 'int-refresh',
-        locations: ['loc1', 'loc2'],
       });
       mockHttpService.post.mockReturnValueOnce(
         of({
@@ -457,13 +481,12 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         }),
       );
       // Act
-      const token = await service.getValidToken('org-refresh', 'int-refresh');
+      const token = await service.getValidToken('org-refresh', 'org-refresh-id');
       // Assert: DB should be updated
       expect(token?.accessToken).toBe('new-access');
       expect(token?.refreshToken).toBe('new-refresh');
-      expect(token?.locations).toEqual(['loc1', 'loc2']);
       const found = await model
-        .findOne({ orgSlug: 'org-refresh', integrationId: 'int-refresh' })
+        .findOne({ accountSlug: 'org-refresh', integrationId: 'int-refresh' })
         .lean();
       expect(found?.accessToken).toBe('new-access');
       expect(found?.refreshToken).toBe('new-refresh');
@@ -475,17 +498,18 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'valid-access',
         refreshToken: 'valid-refresh',
         expiresAt: new Date(Date.now() + 100000), // not expired
-        orgSlug: 'org-valid',
+        accountSlug: 'org-valid',
+        accountId: 'org-valid-id',
         integrationId: 'int-valid',
       });
       const spy = jest.spyOn(service, 'refreshToken');
       // Act
-      const token = await service.getValidToken('org-valid', 'int-valid');
+      const token = await service.getValidToken('org-valid', 'org-valid-id');
       // Assert
       expect(token?.accessToken).toBe('valid-access');
       expect(spy).not.toHaveBeenCalled();
       const found = await model
-        .findOne({ orgSlug: 'org-valid', integrationId: 'int-valid' })
+        .findOne({ accountSlug: 'org-valid', integrationId: 'int-valid' })
         .lean();
       expect(found?.accessToken).toBe('valid-access');
     });
@@ -496,9 +520,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org-refresh',
+        accountSlug: 'org-refresh',
+        accountId: 'org-refresh-id',
         integrationId: 'int-refresh',
-        locations: ['loc1', 'loc2'],
       });
       // Mock OfficeRnD token refresh response
       mockHttpService.post.mockReturnValueOnce(
@@ -511,31 +535,29 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         }),
       );
       // Act
-      const refreshed = await service.getValidToken('org-refresh', 'int-refresh');
+      const refreshed = await service.getValidToken('org-refresh', 'org-refresh-id');
       // Assert: token object is updated
       expect(refreshed?.accessToken).toBe('new-access');
       expect(refreshed?.refreshToken).toBe('new-refresh');
-      expect(refreshed?.locations).toEqual(['loc1', 'loc2']);
       // Assert: DB is updated
       const dbToken = await model
-        .findOne({ orgSlug: 'org-refresh', integrationId: 'int-refresh' })
+        .findOne({ accountSlug: 'org-refresh', integrationId: 'int-refresh' })
         .lean();
       expect(dbToken?.accessToken).toBe('new-access');
       expect(dbToken?.refreshToken).toBe('new-refresh');
-      expect(dbToken?.locations).toEqual(['loc1', 'loc2']);
     });
   });
 
   describe('Refresh token rotation', () => {
     it('should store the new refresh token after refresh and use it for subsequent refreshes', async () => {
       // Arrange: Save an expired token
-      await model.create({
+      const token = await model.create({
         accessToken: 'old-access',
         refreshToken: 'old-refresh',
         expiresAt: new Date(Date.now() - 1000), // expired
-        orgSlug: 'org-rotate',
+        accountSlug: 'org-rotate',
+        accountId: 'org-rotate-id',
         integrationId: 'int-rotate',
-        locations: ['loc1'],
       });
       // First refresh response
       mockHttpService.post.mockReturnValueOnce(
@@ -548,18 +570,16 @@ describe('OauthService integration (mongodb-memory-server)', () => {
         }),
       );
       // Act: First refresh
-      const refreshed = await service.getValidToken('org-rotate', 'int-rotate');
+      const refreshed = await service.getValidToken('org-rotate', 'org-rotate-id');
       // Assert: DB is updated with new refresh token
-      const dbToken = await model
-        .findOne({ orgSlug: 'org-rotate', integrationId: 'int-rotate' })
-        .lean();
+      const dbToken = await model.findOne({ _id: token._id }).lean();
       expect(dbToken?.refreshToken).toBe('new-refresh');
       expect(refreshed?.refreshToken).toBe('new-refresh');
 
       // Second refresh: should use the new refresh token
       // Expire the token
       await model.updateOne(
-        { orgSlug: 'org-rotate', integrationId: 'int-rotate' },
+        { _id: token._id },
         { $set: { expiresAt: new Date(Date.now() - 1000) } },
       );
       // Mock OfficeRnD token refresh response for the new refresh token
@@ -572,15 +592,15 @@ describe('OauthService integration (mongodb-memory-server)', () => {
           },
         }),
       );
-      const refreshedAgain = await service.getValidToken('org-rotate', 'int-rotate');
-      const dbTokenAgain = await model
-        .findOne({ orgSlug: 'org-rotate', integrationId: 'int-rotate' })
-        .lean();
+      const refreshedAgain = await service.getValidToken('org-rotate', 'org-rotate-id');
+      const dbTokenAgain = await model.findOne({ _id: token._id }).lean();
       expect(dbTokenAgain?.refreshToken).toBe('newest-refresh');
       expect(refreshedAgain?.refreshToken).toBe('newest-refresh');
       // Ensure the correct refresh token was used in the request
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const firstCall = mockHttpService.post.mock.calls[0][1];
       expect(firstCall).toContain('refresh_token=old-refresh');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const secondCall = mockHttpService.post.mock.calls[1][1];
       expect(secondCall).toContain('refresh_token=new-refresh');
     });

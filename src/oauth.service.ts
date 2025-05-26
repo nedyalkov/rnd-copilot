@@ -1,9 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { OAuthToken } from './oauth.schema';
-import { AxiosError } from 'axios';
+import { AxiosError, AxiosResponse } from 'axios';
 import { Configuration, CONFIGURATION_KEY } from './config/configuration';
 
 interface TokenResponse {
@@ -22,6 +22,24 @@ interface IntegrationResponse {
   [key: string]: any;
 }
 
+interface AccountResponse {
+  _id: string;
+  name: string;
+  slug: string;
+}
+
+interface FlexApiOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  accessToken?: string;
+  query?: Record<string, string | number | boolean | undefined>;
+  data?: any;
+  version?: string;
+}
+
+const DEFAULT_OPTIONS: FlexApiOptions = {
+  version: 'v2',
+};
+
 @Injectable()
 export class OauthService {
   constructor(
@@ -33,41 +51,97 @@ export class OauthService {
 
   async connectIntegration(
     code: string,
-    orgSlug?: string,
+    accountSlug?: string,
     integrationId?: string,
     locations?: string[],
   ): Promise<OAuthToken> {
-    const token = await this.exchangeCodeForToken(code, orgSlug, integrationId, locations);
-    if (orgSlug && integrationId) {
-      await this.fetchAndStoreIntegrationSecret(orgSlug, integrationId);
+    if (accountSlug && integrationId) {
+      const token = await this.exchangeCodeForToken(code, accountSlug, integrationId, locations);
+      await this.fetchAndStoreIntegrationDetails(token);
+      return token;
     }
-    return token;
+    throw new Error('Invalid accountSlug or integrationId');
   }
 
-  async getIntegrationResponse(integration: OAuthToken): Promise<IntegrationResponse> {
-    const { flexRoot } = this.cfg; // Use the injected configuration
-    const { orgSlug, integrationId, accessToken } = integration; // Destructure to get orgSlug and integrationId
-    const url = `${flexRoot}/api/v2/organizations/${orgSlug}/integrations/${integrationId}`;
-    try {
-      const response = await this.httpService
-        .get<IntegrationResponse>(url, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        })
-        .toPromise();
-
-      if (!response || !response.data) {
-        throw new Error('No response data from integration endpoint');
+  // Private method to call Flex API with error handling and authorization
+  private async callFlexApi<T>(
+    accountSlug: string,
+    path: string,
+    options: FlexApiOptions = DEFAULT_OPTIONS,
+  ): Promise<T | undefined> {
+    options = { ...DEFAULT_OPTIONS, ...options };
+    const { flexRoot } = this.cfg;
+    let url: string = `${flexRoot}/api/${options.version}/organizations/${accountSlug}${path}`;
+    if (options.query) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(options.query)) {
+        if (value !== undefined) params.append(key, String(value));
       }
-      return response.data;
-    } catch (error) {
-      console.error('Failed to fetch integration response:', error);
-      throw error; // Re-throw to handle it in the calling function
+      url += `?${params.toString()}`;
     }
+    const method: string = options.method || 'GET';
+    try {
+      const reqOptions = {
+        headers: { Authorization: `Bearer ${options.accessToken}` },
+      };
+      let response: AxiosResponse<T> | undefined;
+      if (method === 'GET') {
+        response = await this.httpService.get<T>(url, reqOptions).toPromise();
+      } else if (method === 'POST') {
+        response = await this.httpService.post<T>(url, options.data, reqOptions).toPromise();
+      } else if (method === 'PUT') {
+        response = await this.httpService.put<T>(url, options.data, reqOptions).toPromise();
+      } else if (method === 'DELETE') {
+        response = await this.httpService.delete<T>(url, reqOptions).toPromise();
+      } else {
+        throw new Error(`Unsupported HTTP method: ${method}`);
+      }
+      return response?.data;
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        console.error(
+          `Flex API AxiosError [${method} ${url}]:`,
+          JSON.stringify(error.response?.data, null, 2),
+        );
+        throw new Error(`Flex API error: ${JSON.stringify(error.response?.data)}`);
+      }
+      console.error(`Failed to call Flex API [${method} ${url}]:`, error);
+      throw error;
+    }
+  }
+
+  private async getAccountResponse(integration: OAuthToken): Promise<AccountResponse> {
+    const { accountSlug, accessToken } = integration;
+    const accountResponse = await this.callFlexApi<AccountResponse>(accountSlug || '', '', {
+      version: 'v1',
+      accessToken,
+    });
+
+    if (!accountResponse) {
+      throw new NotFoundException('No response from account endpoint');
+    }
+
+    return accountResponse;
+  }
+
+  private async getIntegrationResponse(integration: OAuthToken): Promise<IntegrationResponse> {
+    const { accountSlug, integrationId, accessToken } = integration;
+    const integrationResponse = await this.callFlexApi<IntegrationResponse>(
+      accountSlug || '',
+      `/integrations/${integrationId}`,
+      { accessToken },
+    );
+
+    if (!integrationResponse) {
+      throw new NotFoundException('No response from integration endpoint');
+    }
+
+    return integrationResponse;
   }
 
   async exchangeCodeForToken(
     code: string,
-    orgSlug?: string,
+    accountSlug?: string,
     integrationId?: string,
     locations?: string[],
   ): Promise<OAuthToken> {
@@ -93,7 +167,7 @@ export class OauthService {
         accessToken: access_token,
         refreshToken: refresh_token,
         expiresAt,
-        orgSlug,
+        accountSlug,
         integrationId,
         locations,
       });
@@ -108,27 +182,40 @@ export class OauthService {
     }
   }
 
-  async fetchAndStoreIntegrationSecret(orgSlug: string, integrationId: string): Promise<void> {
-    // Get the latest valid token for this orgSlug
-    const token = await this.oauthModel
-      .findOne({ orgSlug, integrationId })
-      .sort({ expiresAt: -1 })
-      .exec();
-    if (!token) return;
+  async fetchAndStoreIntegrationDetails(token: OAuthToken): Promise<void> {
     try {
-      const integrationResp = await this.getIntegrationResponse(token);
+      console.log('Fetching integration secret for token:', token);
+      const [accountResp, integrationResp] = await Promise.all([
+        this.getAccountResponse(token),
+        this.getIntegrationResponse(token),
+      ]);
+
+      if (!accountResp || !integrationResp) {
+        throw new NotFoundException('No response from account or integration endpoint');
+      }
 
       const secret = integrationResp?.settings?.secret;
       // Store secret in the DB (extend schema/service as needed)
       if (secret) {
         await this.oauthModel.updateOne(
-          { orgSlug, integrationId },
-          { $set: { integrationSecret: secret } },
+          { _id: token._id },
+          {
+            $set: {
+              integrationSecret: secret,
+              accountId: accountResp._id,
+              accountName: accountResp.name,
+            },
+          },
         );
       }
     } catch (error) {
-      console.error('Failed to fetch integration secret', error);
-      throw error; // Re-throw to handle it in the calling function
+      if (error instanceof AxiosError) {
+        console.error('Error fetching integration secret:', error.response?.data);
+        throw new Error('Failed to fetch integration secret: ' + error.response?.data);
+      } else {
+        console.error('Failed to fetch integration secret', error);
+        throw error; // Re-throw to handle it in the calling function
+      }
     }
   }
 
@@ -147,8 +234,6 @@ export class OauthService {
       params.append('client_secret', clientSecret);
       const data = params.toString();
 
-      console.log('Token refresh data:', data);
-      console.log('Token URL:', tokenUrl);
       const response = await this.httpService
         .post<TokenResponse>(tokenUrl, data, {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -173,17 +258,30 @@ export class OauthService {
     }
   }
 
-  async getValidToken(orgSlug: string, integrationId: string): Promise<OAuthToken | null> {
-    console.log('Getting valid token for orgSlug:', orgSlug, 'integrationId:', integrationId);
+  private getSearchQuery(
+    accountSlug?: string,
+    accountId?: string,
+  ): { accountId: string } | { accountSlug: string } {
+    if (accountId) {
+      return { accountId };
+    } else if (accountSlug) {
+      return { accountSlug };
+    }
+    throw new Error('Invalid accountSlug or accountId');
+  }
+
+  async getRawToken(accountSlug?: string, accountId?: string): Promise<OAuthToken | null> {
+    console.log('Getting a token for accountSlug:', accountSlug, 'accountId:', accountId);
     const token = await this.oauthModel
-      .findOne({
-        orgSlug,
-        integrationId,
-      })
+      .findOne(this.getSearchQuery(accountSlug, accountId))
       .sort({ expiresAt: -1 })
       .exec();
 
-    console.log('Retrieved token:', token);
+    return token;
+  }
+
+  async getValidToken(accountSlug?: string, accountId?: string): Promise<OAuthToken | null> {
+    const token = await this.getRawToken(accountSlug, accountId);
     if (!token) return null;
     if (token.expiresAt.getTime() < Date.now()) {
       const newTokenInfo = await this.refreshToken(token.refreshToken);
@@ -199,23 +297,21 @@ export class OauthService {
   }
 
   async checkConnection(
-    orgSlug?: string,
-    integrationId?: string,
-  ): Promise<{ connected: boolean; message?: string }> {
-    // If orgSlug and integrationId are provided, use them for token lookup
+    accountSlug?: string,
+    accountId?: string,
+  ): Promise<{
+    accountName: string;
+  }> {
     let token: OAuthToken | null = null;
-    if (orgSlug && integrationId) {
-      token = await this.getValidToken(orgSlug, integrationId);
+    if (accountSlug && accountId) {
+      token = await this.getValidToken(accountSlug, accountId);
     }
     // If no token found, return not connected
-    if (!token) return { connected: false, message: 'No valid token found' };
+    if (!token) throw new NotFoundException('No valid token found');
 
-    try {
-      const response = await this.getIntegrationResponse(token);
-      console.log('Integration response:', response);
-      return { connected: true };
-    } catch (err) {
-      return { connected: false, message: (err as Error)?.message || 'Unknown error' };
-    }
+    const account = await this.getAccountResponse(token);
+    if (!account) throw new NotFoundException('No account found');
+
+    return { accountName: token.accountName };
   }
 }

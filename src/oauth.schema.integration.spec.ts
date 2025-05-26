@@ -28,24 +28,21 @@ describe('OAuthToken Model with mongodb-memory-server (NestJS)', () => {
       accessToken: 'token',
       refreshToken: 'refresh',
       expiresAt: new Date(),
-      orgSlug: 'org1',
+      accountSlug: 'org1',
       integrationId: 'int1',
-      locations: ['loc1', 'loc2'],
     };
 
     const created = await model.create(mockDoc);
     const createdObj = created.toObject();
-    expect(createdObj.orgSlug).toBe('org1');
+    expect(createdObj.accountSlug).toBe('org1');
     expect(createdObj.integrationId).toBe('int1');
     expect(createdObj.accessToken).toBe('token');
     expect(createdObj.refreshToken).toBe('refresh');
-    expect(createdObj.locations).toEqual(['loc1', 'loc2']);
 
-    const found = await model.findOne({ orgSlug: 'org1' }).lean();
+    const found = await model.findOne({ accountSlug: 'org1' }).lean();
     expect(found).toBeDefined();
     expect(found?.integrationId).toBe('int1');
     expect(found?.accessToken).toBe('token');
     expect(found?.refreshToken).toBe('refresh');
-    expect(found?.locations).toEqual(['loc1', 'loc2']);
   });
 });

@@ -13,3 +13,11 @@ Make sure to use yarn as the package manager for dependency management, and incl
 Commit messages need to follow conventional commits guidelines and need to be split where possible. I don't need to confirm every message - only the ones you are not sure about. Don't use misc messages that explain generic stuff - capture the intent of the change and if possible, add message giving info that is not directly visible from the code change itself.
 
 The API docs for OfficeRnD and its Identity service are hosted here - https://developer.officernd.com/docs/welcome - read them through. Also, you should not use the host/domain names as they are variables in this project.
+
+Write the code in a test driven manner, meaning you follow this procedure:
+
+1. You analyze the requirements and plan tests
+2. You write one test and run it - if it fails, you plan a fix
+3. You fix the code, so the test passes
+4. Once the test passes, you write another one
+5. You continue, until you write all tests you've planned, and they all pass

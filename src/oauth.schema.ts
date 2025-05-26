@@ -13,16 +13,22 @@ export class OAuthToken extends Document {
   expiresAt: Date;
 
   @Prop()
-  orgSlug?: string;
+  accountSlug?: string;
 
   @Prop()
-  integrationId?: string;
+  accountId: string;
 
   @Prop()
-  integrationSecret?: string;
+  accountName: string;
 
-  @Prop({ type: [String] })
-  locations?: string[];
+  @Prop()
+  integrationId: string;
+
+  @Prop()
+  locations: string[];
+
+  @Prop()
+  integrationSecret: string;
 }
 
 export const OAuthTokenSchema = SchemaFactory.createForClass(OAuthToken);
