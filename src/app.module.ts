@@ -10,6 +10,7 @@ import { OauthController } from './oauth.controller';
 import { HttpModule } from '@nestjs/axios';
 import { configurationLoader } from './config/configuration';
 import { FrontendController } from './frontend.controller';
+import { StatusController } from './status.controller';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { FrontendController } from './frontend.controller';
     HttpModule,
     MongooseModule.forFeature([{ name: OAuthToken.name, schema: OAuthTokenSchema }]),
   ],
-  controllers: [ItemController, OauthController, FrontendController],
+  controllers: [ItemController, OauthController, FrontendController, StatusController],
   providers: [ItemService, OauthService],
 })
 export class AppModule {}
