@@ -19,7 +19,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "build_fe": "cd ../client && DEPLOY_URL=/assets yarn build && rm -rf ../server/assets && mkdir -p ../server/assets && cp -r dist/* ../server/assets/",
+    "build_fe": "rm -rf ../ui && cd ../client && yarn && yarn build --base=/ui && mkdir -p ../server/ui && cp -r dist/* ../server/ui/",
     "heroku-postbuild": "yarn build && yarn build_fe"
   },
   "dependencies": {
