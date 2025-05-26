@@ -18,7 +18,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "build_fe": "cd ../rnd-copilot-client && DEPLOY_URL=/assets yarn build && rm -rf ../rnd-copilot/src/assets && mkdir -p ../rnd-copilot/src/assets && cp -r dist/* ../rnd-copilot/src/assets/"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.0",

@@ -1,15 +1,11 @@
 import { Controller, Get, Param, Res, Inject } from '@nestjs/common';
 import { Response } from 'express';
 import { existsSync } from 'fs';
-import { HttpService } from '@nestjs/axios';
 import { CONFIGURATION_KEY, Configuration } from './config/configuration';
 
 @Controller(':orgSlug')
 export class FrontendController {
-  constructor(
-    private readonly httpService: HttpService,
-    @Inject(CONFIGURATION_KEY) private readonly cfg: Configuration,
-  ) {}
+  constructor(@Inject(CONFIGURATION_KEY) private readonly cfg: Configuration) {}
 
   @Get()
   serveFrontend(@Param('orgSlug') orgSlug: string, @Res() res: Response) {
