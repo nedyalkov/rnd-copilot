@@ -11,9 +11,9 @@ import {
 import { OauthService } from './oauth.service';
 import { Response } from 'express';
 import { Configuration, CONFIGURATION_KEY } from './config/configuration';
-
-import { trim } from 'lodash';
 import { Transform } from 'class-transformer';
+import { parseAndValidateSignature } from './signature.helper';
+import { trim } from 'lodash';
 
 export class FlexConfigureQueryDto {
   slug: string;
@@ -28,13 +28,13 @@ export class FlexConfigureQueryDto {
 
   // HACK: Shouldn't be necessary but sometimes Flex sends us '"[value]"' instead of '[value]' due to
   // incorrect handling of ObjectId query params (e.g. happens for external integration dataSync).
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-  @Transform(({ value }) => trim(value, '"'))
+  @Transform(({ value }) => trim(value as string, '"'))
   organizationId: string;
 
   memberId: string;
-  signature: string;
   userId: string;
+
+  signature: string;
 }
 
 // DTO for OAuth return query params
@@ -54,33 +54,14 @@ export class OauthController {
   ) {}
 
   private async validateSignature(query: FlexConfigureQueryDto): Promise<void> {
-    const { slug, organizationId, userId, memberId, signature } = query;
-
+    const { slug, organizationId } = query;
     const token = await this.oauthService.getRawToken(slug, organizationId);
     if (!token) {
       throw new NotFoundException('OAuth integration not found for this organization.');
     }
-
     const secret = token.integrationSecret;
-
-    // const hash = crypto
-    //   .createHmac('sha256', secret)
-    //   .update(userId + memberId)
-    //   .digest('hex');
-
-    console.log(
-      'Validating signature for userId:',
-      userId,
-      'memberId:',
-      memberId,
-      'signature:',
-      signature,
-      'secret:',
-      secret,
-    );
-    // const { clientSecret } = this.cfg.oauth;
-    // const hash = crypto.createHmac('sha256', clientSecret).update(userId + memberId).digest('hex');
-    // return true;
+    const { signature, ...payload } = query;
+    parseAndValidateSignature(payload, signature, secret);
   }
 
   @Get('start')
@@ -106,6 +87,7 @@ export class OauthController {
 
   @Get('check')
   async check(@Query() query: FlexConfigureQueryDto) {
+    console.log('query', JSON.stringify(query));
     await this.validateSignature(query);
     return this.oauthService.checkConnection(query.slug, query.organizationId);
   }

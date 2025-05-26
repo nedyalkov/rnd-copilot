@@ -4,6 +4,10 @@ This is a NestJS + TypeScript application meant to integration with the OfficeRn
 The application should be structured with clear separation of concerns, including controllers, services, and schemas. Use Mongoose for MongoDB interactions and ensure all environment variables are managed via the `.env` file.
 The application should include comprehensive tests for all components, including unit tests for controllers and services, and integration tests for the OAuth flow. Use Jest as the testing framework.
 
+Coding guidelines:
+
+- Prefer desctructuring instead of calling the object multiple times
+
 Ensure that the code is well-documented, with clear comments explaining the purpose of each module, function, and significant logic. Follow best practices for error handling and logging.
 The application should also include a README file with setup instructions, key endpoints, and code structure overview. Use Prettier for code formatting and ensure consistent style across the project.
 The application should be designed to be easily extendable for future features, such as additional OAuth providers or enhanced integration capabilities with OfficeRnD APIs.
