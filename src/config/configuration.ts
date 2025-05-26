@@ -1,5 +1,5 @@
 import { ConfigType, registerAs } from '@nestjs/config';
-import path from 'path';
+import * as path from 'path';
 
 export const configurationLoader = registerAs('configuration', () => ({
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017',
@@ -14,9 +14,7 @@ export const configurationLoader = registerAs('configuration', () => ({
   },
   flexRoot: process.env.FLEX_ROOT || 'https://staging.officernd.com',
   frontend: {
-    indexPath:
-      process.env.FRONTEND_INDEX_PATH ||
-      path.join(process.cwd(), '..', 'rnd-copilot-client', 'dist', 'index.html'),
+    indexPath: process.env.FRONTEND_INDEX_PATH || path.join(process.cwd(), 'ui', 'index.html'),
   },
 }));
 

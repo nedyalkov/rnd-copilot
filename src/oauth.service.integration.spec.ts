@@ -69,6 +69,9 @@ describe('OauthService integration (mongodb-memory-server)', () => {
             flexRoot: 'https://custom.flex',
             mongoUri: '',
             mongoDbName: '',
+            frontend: {
+              indexPath: 'index.html',
+            },
           } as Configuration,
         },
         OauthService,

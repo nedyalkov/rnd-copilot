@@ -5,7 +5,7 @@ import { join } from 'path';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.useStaticAssets(join(__dirname, 'assets'), { prefix: '/assets/' });
+  app.useStaticAssets(join(__dirname, '../ui'), { prefix: '/ui/' });
   await app.listen(3000);
 }
 bootstrap().catch((err) => {

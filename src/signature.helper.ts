@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
-import { omit, omitBy, isUndefined } from 'lodash';
 
 /**
  * Serializes query parameters into a JSON string with sorted keys.
