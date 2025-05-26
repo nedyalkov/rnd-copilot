@@ -19,7 +19,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "build_fe": "cd ../rnd-copilot-client && yarn build --base=/ui && rm -rf ../rnd-copilot/ui && mkdir -p ../rnd-copilot/ui && cp -r dist/* ../rnd-copilot/ui/"
+    "build_fe": "cd ../client && DEPLOY_URL=/assets yarn build && rm -rf ../server/assets && mkdir -p ../server/assets && cp -r dist/* ../server/assets/",
+    "heroku-postbuild": "yarn build && yarn build_fe"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.0",
